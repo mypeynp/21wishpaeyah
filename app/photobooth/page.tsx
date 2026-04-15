@@ -10,9 +10,8 @@ export default function Photobooth() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   
-  // State สำหรับจัดการภาพชั่วคราวและฟิลเตอร์ก่อนตกลง
-  const [tempImageData, setTempImageData] = useState<string | null>(null);
-  const [currentFilter, setCurrentFilter] = useState('none');
+  // เก็บค่าฟิลเตอร์ที่จะใช้กับทุกรูปพร้อมกัน
+  const [globalFilter, setGlobalFilter] = useState('none');
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const photoAreaRef = useRef<HTMLDivElement>(null);
@@ -53,10 +52,9 @@ export default function Photobooth() {
     setIsCamOpen(false);
   };
 
-  // ถ่ายภาพแล้วเก็บไว้ใน Temp ก่อนเลือกฟิลเตอร์
   const takePhoto = () => {
     const video = videoRef.current;
-    if (video) {
+    if (video && activeSlot !== null) {
       const canvas = document.createElement('canvas');
       const targetW = 600; const targetH = 800;
       canvas.width = targetW; canvas.height = targetH;
@@ -71,7 +69,9 @@ export default function Photobooth() {
           sw = vW; sh = vW / targetAspect; sx = 0; sy = (vH - sh) / 2;
         }
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
-        setTempImageData(canvas.toDataURL('image/jpeg', 0.9));
+        const newImages = [...images];
+        newImages[activeSlot] = canvas.toDataURL('image/jpeg', 0.9);
+        setImages(newImages);
         stopCamera();
       }
     }
@@ -79,7 +79,7 @@ export default function Photobooth() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (file && activeSlot !== null) {
       const reader = new FileReader();
       reader.onloadend = () => {
         const img = new Image();
@@ -97,45 +97,51 @@ export default function Photobooth() {
               sw = img.width; sh = img.width / targetAspect; sx = 0; sy = (img.height - sh) / 2;
             }
             ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
-            setTempImageData(canvas.toDataURL('image/jpeg', 0.9));
-            setIsMenuOpen(false);
+            const newImages = [...images];
+            newImages[activeSlot] = canvas.toDataURL('image/jpeg', 0.9);
+            setImages(newImages);
           }
         };
         img.src = reader.result as string;
+        setIsMenuOpen(false);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  // บันทึกฟิลเตอร์ลงในเนื้อรูปจริงก่อนเอาลงตู้
-  const applyFilterToImage = () => {
-    if (tempImageData && activeSlot !== null) {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 600; canvas.height = 800;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.filter = currentFilter; // ฝัง Filter ลงไปที่นี่
-          ctx.drawImage(img, 0, 0);
-          const newImages = [...images];
-          newImages[activeSlot] = canvas.toDataURL('image/jpeg', 0.9);
-          setImages(newImages);
-          setTempImageData(null);
-          setCurrentFilter('none');
-        }
-      };
-      img.src = tempImageData;
-    }
-  };
-
+  // --- ฟังก์ชันดาวน์โหลด: แก้ให้ Filter ติดแค่รูป ไม่ติดเฟรม ---
   const downloadPhoto = async () => {
     if (photoAreaRef.current) {
+      // 1. ถ่ายรูปพื้นที่ทั้งหมดแบบ "ดิบ" (ยังไม่มีฟิลเตอร์)
       const canvas = await html2canvas(photoAreaRef.current, { scale: 3, useCORS: true, backgroundColor: "#ffffff" });
-      const link = document.createElement('a');
-      link.download = `photobooth.jpg`;
-      link.href = canvas.toDataURL('image/jpeg', 1.0);
-      link.click();
+      
+      const finalCanvas = document.createElement('canvas');
+      finalCanvas.width = canvas.width;
+      finalCanvas.height = canvas.height;
+      const ctx = finalCanvas.getContext('2d');
+
+      if (ctx) {
+        // 2. วาดส่วนที่เป็น "รูปภาพ" โดยใส่ฟิลเตอร์
+        // เราจะวาด canvas เดิมลงไปก่อนแต่ใช้ Filter
+        ctx.filter = globalFilter;
+        ctx.drawImage(canvas, 0, 0);
+
+        // 3. วาด "เฟรม" ทับข้างบนอีกรอบแบบ "ไม่มีฟิลเตอร์"
+        // วิธีนี้จะทำให้เฟรมกลับมาสีปกติ แต่รูปข้างล่างโดนฟิลเตอร์ไปแล้ว
+        ctx.filter = 'none';
+        const frameImg = new Image();
+        frameImg.crossOrigin = "anonymous";
+        frameImg.onload = () => {
+          ctx.drawImage(frameImg, 0, 0, finalCanvas.width, finalCanvas.height);
+          
+          // 4. ดาวน์โหลด
+          const link = document.createElement('a');
+          link.download = `photobooth-21wish.jpg`;
+          link.href = finalCanvas.toDataURL('image/jpeg', 1.0);
+          link.click();
+        };
+        frameImg.src = selectedFrame;
+      }
     }
   };
 
@@ -152,39 +158,52 @@ export default function Photobooth() {
         ))}
       </div>
 
+      {/* Photobooth Area */}
       <div ref={photoAreaRef} style={{ position: 'relative', width: '300px', height: '450px', backgroundColor: '#fff', overflow: 'hidden' }}>
+        {/* เลเยอร์เฟรม (แสดงบนหน้าจอ) */}
         <img src={selectedFrame} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 10, pointerEvents: 'none' }} />
+        
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', height: '100%', padding: '12px', gap: '6px' }}>
           {images.map((img, index) => (
             <div key={index} onClick={() => openMenu(index)} style={{ backgroundColor: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden' }}>
-              {img ? <img src={img} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} /> : <span style={{ fontSize: '10px', color: '#ccc' }}>TAP</span>}
+              {img ? (
+                <img 
+                  src={img} 
+                  style={{ 
+                    width: '100%', 
+                    height: '100%', 
+                    display: 'block', 
+                    objectFit: 'cover',
+                    filter: globalFilter // แสดงฟิลเตอร์บนหน้าจอทันทีทุกรูป
+                  }} 
+                />
+              ) : (
+                <span style={{ fontSize: '10px', color: '#ccc' }}>TAP</span>
+              )}
             </div>
           ))}
         </div>
       </div>
 
-      <button onClick={downloadPhoto} style={{ marginTop: '30px', width: '300px', padding: '16px', backgroundColor: darkRed, color: 'white', border: 'none', fontWeight: 'bold', fontSize: '16px' }}>DOWNLOAD</button>
-
-      {/* --- ป๊อปอัพเลือก Filter หลังถ่าย/อัปโหลด (ตัวที่ทำให้ Filter ติดแค่ในรูป) --- */}
-      {tempImageData && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'white', zIndex: 500, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <p style={{ fontWeight: 'bold', marginBottom: '15px' }}>PREVIEW & FILTER</p>
-          <div style={{ width: '240px', height: '320px', backgroundColor: '#eee', marginBottom: '20px', overflow: 'hidden' }}>
-            <img src={tempImageData} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: currentFilter }} />
-          </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '30px' }}>
-            {filterOptions.map(f => (
-              <button key={f.name} onClick={() => setCurrentFilter(f.value)} style={{ padding: '8px 12px', border: `1px solid ${darkRed}`, backgroundColor: currentFilter === f.value ? darkRed : 'white', color: currentFilter === f.value ? 'white' : darkRed, fontSize: '12px', fontWeight: 'bold' }}>{f.name}</button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: '15px', width: '100%', maxWidth: '300px' }}>
-            <button onClick={() => setTempImageData(null)} style={{ flex: 1, padding: '12px', background: '#eee', border: 'none', fontWeight: 'bold' }}>CANCEL</button>
-            <button onClick={applyFilterToImage} style={{ flex: 1, padding: '12px', background: darkRed, color: 'white', border: 'none', fontWeight: 'bold' }}>ADD TO FRAME</button>
-          </div>
+      {/* เลือก Filter ครั้งเดียวเปลี่ยนทุกรูป */}
+      <div style={{ marginTop: '25px', width: '300px' }}>
+        <p style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '10px', textAlign: 'center' }}>FILTER ALL PHOTOS</p>
+        <div style={{ display: 'flex', gap: '5px', overflowX: 'auto', justifyContent: 'center', paddingBottom: '10px' }}>
+          {filterOptions.map(f => (
+            <button 
+              key={f.name} 
+              onClick={() => setGlobalFilter(f.value)}
+              style={{ padding: '6px 12px', fontSize: '11px', backgroundColor: globalFilter === f.value ? 'black' : '#f0f0f0', color: globalFilter === f.value ? 'white' : 'black', border: 'none', fontWeight: 'bold' }}
+            >
+              {f.name}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
-      {/* Menu & Camera Popups */}
+      <button onClick={downloadPhoto} style={{ marginTop: '10px', width: '300px', padding: '16px', backgroundColor: darkRed, color: 'white', border: 'none', fontWeight: 'bold', fontSize: '16px' }}>DOWNLOAD</button>
+
+      {/* Popups */}
       {isMenuOpen && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setIsMenuOpen(false)}>
           <div style={{ backgroundColor: 'white', width: '100%', padding: '25px', borderRadius: '20px 20px 0 0' }} onClick={e => e.stopPropagation()}>
