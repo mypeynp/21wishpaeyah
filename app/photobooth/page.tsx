@@ -10,8 +10,9 @@ export default function Photobooth() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
   
-  // State สำหรับเก็บ Filter ที่เลือก (จะส่งผลต่อทุกรูปในเฟรม)
-  const [globalFilter, setGlobalFilter] = useState('none');
+  // State สำหรับจัดการภาพชั่วคราวและฟิลเตอร์ก่อนตกลง
+  const [tempImageData, setTempImageData] = useState<string | null>(null);
+  const [currentFilter, setCurrentFilter] = useState('none');
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const photoAreaRef = useRef<HTMLDivElement>(null);
@@ -52,17 +53,17 @@ export default function Photobooth() {
     setIsCamOpen(false);
   };
 
+  // ถ่ายภาพแล้วเก็บไว้ใน Temp ก่อนเลือกฟิลเตอร์
   const takePhoto = () => {
     const video = videoRef.current;
-    if (video && activeSlot !== null) {
+    if (video) {
       const canvas = document.createElement('canvas');
       const targetW = 600; const targetH = 800;
       canvas.width = targetW; canvas.height = targetH;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         const vW = video.videoWidth; const vH = video.videoHeight;
-        const aspect = vW / vH;
-        const targetAspect = targetW / targetH;
+        const aspect = vW / vH; const targetAspect = targetW / targetH;
         let sx, sy, sw, sh;
         if (aspect > targetAspect) {
           sw = vH * targetAspect; sh = vH; sx = (vW - sw) / 2; sy = 0;
@@ -70,9 +71,7 @@ export default function Photobooth() {
           sw = vW; sh = vW / targetAspect; sx = 0; sy = (vH - sh) / 2;
         }
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
-        const newImages = [...images];
-        newImages[activeSlot] = canvas.toDataURL('image/jpeg', 0.9);
-        setImages(newImages);
+        setTempImageData(canvas.toDataURL('image/jpeg', 0.9));
         stopCamera();
       }
     }
@@ -80,7 +79,7 @@ export default function Photobooth() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && activeSlot !== null) {
+    if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
         const img = new Image();
@@ -90,8 +89,7 @@ export default function Photobooth() {
           canvas.width = targetW; canvas.height = targetH;
           const ctx = canvas.getContext('2d');
           if (ctx) {
-            const aspect = img.width / img.height;
-            const targetAspect = targetW / targetH;
+            const aspect = img.width / img.height; const targetAspect = targetW / targetH;
             let sx, sy, sw, sh;
             if (aspect > targetAspect) {
               sw = img.height * targetAspect; sh = img.height; sx = (img.width - sw) / 2; sy = 0;
@@ -99,29 +97,44 @@ export default function Photobooth() {
               sw = img.width; sh = img.width / targetAspect; sx = 0; sy = (img.height - sh) / 2;
             }
             ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
-            const newImages = [...images];
-            newImages[activeSlot] = canvas.toDataURL('image/jpeg', 0.9);
-            setImages(newImages);
+            setTempImageData(canvas.toDataURL('image/jpeg', 0.9));
+            setIsMenuOpen(false);
           }
         };
         img.src = reader.result as string;
-        setIsMenuOpen(false);
       };
       reader.readAsDataURL(file);
     }
   };
 
+  // บันทึกฟิลเตอร์ลงในเนื้อรูปจริงก่อนเอาลงตู้
+  const applyFilterToImage = () => {
+    if (tempImageData && activeSlot !== null) {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 600; canvas.height = 800;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.filter = currentFilter; // ฝัง Filter ลงไปที่นี่
+          ctx.drawImage(img, 0, 0);
+          const newImages = [...images];
+          newImages[activeSlot] = canvas.toDataURL('image/jpeg', 0.9);
+          setImages(newImages);
+          setTempImageData(null);
+          setCurrentFilter('none');
+        }
+      };
+      img.src = tempImageData;
+    }
+  };
+
   const downloadPhoto = async () => {
     if (photoAreaRef.current) {
-      // html2canvas จะจับภาพรวมถึง CSS Filter ที่เราใส่ไว้ในรูปด้วย
-      const canvas = await html2canvas(photoAreaRef.current, { 
-        scale: 3, 
-        useCORS: true,
-        backgroundColor: "#ffffff" 
-      });
+      const canvas = await html2canvas(photoAreaRef.current, { scale: 3, useCORS: true, backgroundColor: "#ffffff" });
       const link = document.createElement('a');
       link.download = `photobooth.jpg`;
-      link.href = canvas.toDataURL('image/jpeg', 0.9);
+      link.href = canvas.toDataURL('image/jpeg', 1.0);
       link.click();
     }
   };
@@ -133,67 +146,45 @@ export default function Photobooth() {
         <Link href="/" style={{ textDecoration: 'none' }}><span style={{ color: 'black', fontWeight: 'bold', fontSize: '20px', letterSpacing: '2px' }}>HOME</span></Link>
       </div>
 
-      {/* เลือกเฟรม */}
       <div style={{ marginBottom: '25px', display: 'flex', gap: '8px' }}>
         {[1, 2, 3].map(n => (
           <button key={n} onClick={() => setSelectedFrame(`/frame${n}.png`)} style={{ padding: '8px 16px', borderRadius: '25px', border: `2px solid ${darkRed}`, backgroundColor: selectedFrame === `/frame${n}.png` ? darkRed : 'white', color: selectedFrame === `/frame${n}.png` ? 'white' : darkRed, fontWeight: 'bold', fontSize: '13px' }}>FRAME {n}</button>
         ))}
       </div>
 
-      {/* พื้นที่ถ่ายรูป */}
       <div ref={photoAreaRef} style={{ position: 'relative', width: '300px', height: '450px', backgroundColor: '#fff', overflow: 'hidden' }}>
         <img src={selectedFrame} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 10, pointerEvents: 'none' }} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', height: '100%', padding: '12px', gap: '6px' }}>
           {images.map((img, index) => (
             <div key={index} onClick={() => openMenu(index)} style={{ backgroundColor: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', overflow: 'hidden' }}>
-              {img ? (
-                <img 
-                  src={img} 
-                  style={{ 
-                    width: '100%', 
-                    height: '100%', 
-                    display: 'block',
-                    filter: globalFilter // ใส่ Filter ที่นี่เพื่อให้แสดงผลแบบ Real-time
-                  }} 
-                />
-              ) : (
-                <span style={{ fontSize: '10px', color: '#ccc' }}>TAP</span>
-              )}
+              {img ? <img src={img} style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} /> : <span style={{ fontSize: '10px', color: '#ccc' }}>TAP</span>}
             </div>
           ))}
         </div>
       </div>
 
-      {/* ส่วนเลือก Filter เหนือปุ่ม Download */}
-      <div style={{ marginTop: '25px', width: '300px' }}>
-        <p style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '10px', textAlign: 'center' }}>CHOOSE FILTER</p>
-        <div style={{ display: 'flex', gap: '5px', overflowX: 'auto', paddingBottom: '10px', justifyContent: 'center' }}>
-          {filterOptions.map(f => (
-            <button 
-              key={f.name} 
-              onClick={() => setGlobalFilter(f.value)}
-              style={{ 
-                padding: '6px 12px', 
-                fontSize: '11px',
-                whiteSpace: 'nowrap',
-                backgroundColor: globalFilter === f.value ? 'black' : '#f0f0f0',
-                color: globalFilter === f.value ? 'white' : 'black',
-                border: 'none',
-                fontWeight: 'bold',
-                cursor: 'pointer'
-              }}
-            >
-              {f.name}
-            </button>
-          ))}
+      <button onClick={downloadPhoto} style={{ marginTop: '30px', width: '300px', padding: '16px', backgroundColor: darkRed, color: 'white', border: 'none', fontWeight: 'bold', fontSize: '16px' }}>DOWNLOAD</button>
+
+      {/* --- ป๊อปอัพเลือก Filter หลังถ่าย/อัปโหลด (ตัวที่ทำให้ Filter ติดแค่ในรูป) --- */}
+      {tempImageData && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'white', zIndex: 500, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <p style={{ fontWeight: 'bold', marginBottom: '15px' }}>PREVIEW & FILTER</p>
+          <div style={{ width: '240px', height: '320px', backgroundColor: '#eee', marginBottom: '20px', overflow: 'hidden' }}>
+            <img src={tempImageData} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: currentFilter }} />
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '30px' }}>
+            {filterOptions.map(f => (
+              <button key={f.name} onClick={() => setCurrentFilter(f.value)} style={{ padding: '8px 12px', border: `1px solid ${darkRed}`, backgroundColor: currentFilter === f.value ? darkRed : 'white', color: currentFilter === f.value ? 'white' : darkRed, fontSize: '12px', fontWeight: 'bold' }}>{f.name}</button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '15px', width: '100%', maxWidth: '300px' }}>
+            <button onClick={() => setTempImageData(null)} style={{ flex: 1, padding: '12px', background: '#eee', border: 'none', fontWeight: 'bold' }}>CANCEL</button>
+            <button onClick={applyFilterToImage} style={{ flex: 1, padding: '12px', background: darkRed, color: 'white', border: 'none', fontWeight: 'bold' }}>ADD TO FRAME</button>
+          </div>
         </div>
-      </div>
+      )}
 
-      <button onClick={downloadPhoto} style={{ marginTop: '10px', width: '300px', padding: '16px', backgroundColor: darkRed, color: 'white', border: 'none', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' }}>
-        DOWNLOAD
-      </button>
-
-      {/* Popups & Camera (เหมือนเดิม) */}
+      {/* Menu & Camera Popups */}
       {isMenuOpen && (
         <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setIsMenuOpen(false)}>
           <div style={{ backgroundColor: 'white', width: '100%', padding: '25px', borderRadius: '20px 20px 0 0' }} onClick={e => e.stopPropagation()}>
