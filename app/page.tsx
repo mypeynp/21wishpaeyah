@@ -7,45 +7,45 @@ export default function Home() {
       flexDirection: 'column', 
       alignItems: 'center', 
       justifyContent: 'center', 
-      minHeight: '100vh', // ใช้ minHeight แทน height เพื่อป้องกันปัญหาจอเล็กมากแล้วเนื้อหาล้น
+      minHeight: '100vh', 
       backgroundColor: 'white',
       fontFamily: "'LINE Seed', sans-serif",
       margin: '0',
-      padding: '20px' // เพิ่ม padding เล็กน้อยเพื่อไม่ให้รูปชิดขอบจอเกินไปในมือถือ
+      padding: '20px'
     }}>
-      {/* รูป Welcome ตรงกลาง */}
+      {/* รูป Welcome */}
       <div style={{ width: '100%', maxWidth: '500px', display: 'flex', justifyContent: 'center' }}>
         <img 
           src="/welcome.jpg" 
           alt="Welcome" 
-          style={{ 
-            width: '100%',        /* บังคับให้ขยายเต็มความกว้างของ Container */
-            height: 'auto',       /* รักษาอัตราส่วนรูปภาพ */
-            maxWidth: '500px',    /* ขนาดใหญ่ที่สุดที่ยอมให้แสดง (เท่าเดิมที่คุณตั้งไว้) */
-            borderRadius: '0', 
-            boxShadow: 'none', 
-            display: 'block'
-          }} 
+          style={{ width: '100%', height: 'auto', maxWidth: '500px', display: 'block' }} 
         />
       </div>
       
-      {/* ปุ่ม ENTER สีดำ */}
+      {/* ปุ่ม PHOTOBOOTH */}
       <Link href="/photobooth">
-        <button style={{ 
-          marginTop: '30px', 
-          color: 'black', 
-          fontSize: '26px', 
-          background: 'none', 
-          border: 'none', 
-          cursor: 'pointer',
-          fontWeight: 'bold',
-          letterSpacing: '2px',
-          outline: 'none',
-          fontFamily: "'LINE Seed', sans-serif"
-        }}>
-          ENTER
+        <button style={buttonStyle}>PHOTOBOOTH</button>
+      </Link>
+
+      {/* ปุ่ม CHANGE PROFILE */}
+      <Link href="/change-profile">
+        <button style={{ ...buttonStyle, marginTop: '10px', fontSize: '20px' }}>
+          CHANGE PROFILE
         </button>
       </Link>
     </main>
   );
 }
+
+const buttonStyle = {
+  marginTop: '30px', 
+  color: 'black', 
+  fontSize: '26px', 
+  background: 'none', 
+  border: 'none', 
+  cursor: 'pointer',
+  fontWeight: 'bold',
+  letterSpacing: '2px',
+  outline: 'none',
+  fontFamily: "'LINE Seed', sans-serif"
+};
